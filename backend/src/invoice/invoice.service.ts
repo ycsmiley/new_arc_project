@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AegisService } from '../aegis/aegis.service';
 
-interface Invoice {
+export interface Invoice {
   id: string;
   invoice_number: string;
   supplier_address: string;
