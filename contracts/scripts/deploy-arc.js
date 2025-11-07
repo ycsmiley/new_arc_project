@@ -14,10 +14,14 @@ async function main() {
   console.log("💰 Account balance:", hre.ethers.formatUnits(balance, 6), "USDC\n");
 
   // Get Aegis server wallet address
-  const aegisServerWallet = process.env.AEGIS_SERVER_WALLET;
-  if (!aegisServerWallet) {
-    throw new Error("AEGIS_SERVER_WALLET not set in .env");
+  let aegisServerWallet = process.env.AEGIS_SERVER_WALLET;
+  
+  // If not set or is template value, use deployer address for local testing
+  if (!aegisServerWallet || aegisServerWallet === "0x..." || aegisServerWallet.length !== 42) {
+    aegisServerWallet = deployer.address;
+    console.log("⚠️  AEGIS_SERVER_WALLET not configured, using deployer address for testing");
   }
+  
   console.log("🤖 Aegis Server Wallet:", aegisServerWallet);
 
   // Optional: Initial liquidity (in USDC with 6 decimals)
