@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
+import { HfInference } from '@huggingface/inference';
 import { BlockchainService } from '../blockchain/blockchain.service';
 
 interface PricingRules {
@@ -15,6 +16,7 @@ interface PricingResult {
   repaymentAmount: number;
   discountRate: number;
   riskScore: number;
+  aiRiskScore?: number;
   daysUntilDue: number;
   explanation: string;
 }
@@ -36,11 +38,21 @@ export class AegisService {
     riskMultiplier: 1.2,
     liquidityThreshold: 1000000, // 1M USDC
   };
+  private hf: HfInference | null = null;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly blockchainService: BlockchainService,
-  ) {}
+  ) {
+    // Initialize Hugging Face client if token is provided
+    const hfToken = this.configService.get<string>('HUGGINGFACE_API_TOKEN');
+    if (hfToken) {
+      this.hf = new HfInference(hfToken);
+      this.logger.log('Hugging Face AI integration enabled');
+    } else {
+      this.logger.warn('Hugging Face token not found - using rule-based risk scoring only');
+    }
+  }
 
   /**
    * Calculate dynamic pricing for invoice financing
@@ -64,15 +76,26 @@ export class AegisService {
       (dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
     );
 
-    // 3. Calculate dynamic discount rate
+    // 3. Calculate liquidity ratio for risk assessment
+    const liquidityRatio =
+      Number(availableLiquidity) / this.rules.liquidityThreshold;
+
+    // 4. Get AI-powered risk prediction (if available)
+    const aiRiskScore = await this.calculateAIRiskScore(
+      invoiceAmount,
+      daysUntilDue,
+      buyerRating,
+      supplierRating,
+      liquidityRatio,
+    );
+
+    // 5. Calculate dynamic discount rate
     let discountRate = this.rules.baseDiscountRate;
 
     // Time-based adjustment
     discountRate += (daysUntilDue / 365) * this.rules.fedRate;
 
     // Liquidity-based adjustment
-    const liquidityRatio =
-      Number(availableLiquidity) / this.rules.liquidityThreshold;
     if (liquidityRatio < 0.3) {
       discountRate *= 1.5; // Tight liquidity, increase discount
       this.logger.warn('Tight liquidity detected, increasing discount rate');
@@ -86,10 +109,17 @@ export class AegisService {
     const riskFactor = (100 - avgRating) / 100;
     discountRate += discountRate * riskFactor * 0.5;
 
-    // 4. Calculate payout amount
+    // AI-based adjustment (if available)
+    if (aiRiskScore !== null) {
+      const aiRiskFactor = (100 - aiRiskScore) / 100;
+      discountRate += discountRate * aiRiskFactor * 0.3; // 30% weight to AI prediction
+      this.logger.log(`AI risk score integrated: ${aiRiskScore}/100`);
+    }
+
+    // 6. Calculate payout amount
     const payoutAmount = invoiceAmount * (1 - discountRate);
 
-    // 5. Calculate risk score
+    // 7. Calculate rule-based risk score
     const riskScore = this.calculateRiskScore(
       buyerRating,
       supplierRating,
@@ -97,20 +127,21 @@ export class AegisService {
       liquidityRatio,
     );
 
-    // 6. Generate explanation
+    // 8. Generate explanation
     const explanation = this.generateExplanation(
       discountRate,
       daysUntilDue,
       liquidityRatio,
       avgRating,
       riskScore,
+      aiRiskScore,
     );
 
     // Calculate repayment amount (invoice amount without discount)
     const repaymentAmount = invoiceAmount;
-    
+
     this.logger.log(
-      `Pricing calculated: Payout ${payoutAmount}, Repayment ${repaymentAmount}, Discount ${(discountRate * 100).toFixed(2)}%, Risk Score ${riskScore}`,
+      `Pricing calculated: Payout ${payoutAmount}, Repayment ${repaymentAmount}, Discount ${(discountRate * 100).toFixed(2)}%, Risk Score ${riskScore}${aiRiskScore !== null ? `, AI Risk Score ${aiRiskScore}` : ''}`,
     );
 
     return {
@@ -118,9 +149,64 @@ export class AegisService {
       repaymentAmount: Math.floor(repaymentAmount),
       discountRate: Number(discountRate.toFixed(4)),
       riskScore: Number(riskScore.toFixed(2)),
+      aiRiskScore: aiRiskScore !== null ? Number(aiRiskScore.toFixed(2)) : undefined,
       daysUntilDue: daysUntilDue,
       explanation,
     };
+  }
+
+  /**
+   * Calculate AI-powered risk score using Hugging Face
+   * Returns a score from 0-100 (higher is better/lower risk)
+   */
+  private async calculateAIRiskScore(
+    invoiceAmount: number,
+    daysUntilDue: number,
+    buyerRating: number,
+    supplierRating: number,
+    liquidityRatio: number,
+  ): Promise<number | null> {
+    if (!this.hf) {
+      return null; // No HF token, skip AI scoring
+    }
+
+    try {
+      this.logger.debug('Requesting AI risk prediction from Hugging Face...');
+
+      const prompt = `As a financial risk analyst, predict the creditworthiness score (0-100, where 100 is lowest risk) for this invoice financing scenario:
+- Invoice Amount: $${invoiceAmount.toLocaleString()} USDC
+- Payment Term: ${daysUntilDue} days
+- Buyer Credit Rating: ${buyerRating}/100
+- Supplier Credit Rating: ${supplierRating}/100
+- Market Liquidity Ratio: ${(liquidityRatio * 100).toFixed(1)}%
+
+Respond with only a single number between 0-100 representing the creditworthiness score.`;
+
+      const result = await this.hf.textGeneration({
+        model: 'mistralai/Mistral-7B-Instruct-v0.1',
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 10,
+          temperature: 0.3,
+          return_full_text: false,
+        },
+      });
+
+      const scoreText = result.generated_text.trim();
+      const score = parseFloat(scoreText);
+
+      if (isNaN(score)) {
+        this.logger.warn(`AI returned non-numeric score: ${scoreText}`);
+        return null;
+      }
+
+      const normalizedScore = Math.max(0, Math.min(100, score));
+      this.logger.log(`AI risk score calculated: ${normalizedScore}/100`);
+      return normalizedScore;
+    } catch (error) {
+      this.logger.error('HF AI risk prediction failed:', error.message);
+      return null;
+    }
   }
 
   /**
@@ -159,18 +245,33 @@ export class AegisService {
     liquidityRatio: number,
     avgRating: number,
     riskScore: number,
+    aiRiskScore: number | null,
   ): string {
     const parts: string[] = [];
 
-    parts.push(
-      `Applied ${(discountRate * 100).toFixed(2)}% discount rate based on:`,
-    );
+    if (aiRiskScore !== null) {
+      parts.push(
+        `🤖 AI-Powered Pricing: Applied ${(discountRate * 100).toFixed(2)}% discount rate based on:`,
+      );
+    } else {
+      parts.push(
+        `Applied ${(discountRate * 100).toFixed(2)}% discount rate based on:`,
+      );
+    }
+
     parts.push(`• Payment term: ${daysUntilDue} days`);
     parts.push(
       `• Pool liquidity: ${liquidityRatio > 0.7 ? 'Abundant' : liquidityRatio > 0.3 ? 'Moderate' : 'Tight'}`,
     );
     parts.push(`• Average credit rating: ${avgRating.toFixed(0)}/100`);
-    parts.push(`• Overall risk score: ${riskScore.toFixed(0)}/100`);
+    parts.push(`• Rule-based risk score: ${riskScore.toFixed(0)}/100`);
+
+    if (aiRiskScore !== null) {
+      parts.push(`• AI risk prediction: ${aiRiskScore.toFixed(0)}/100`);
+      parts.push(
+        `• Analysis powered by Hugging Face Mistral-7B`,
+      );
+    }
 
     return parts.join('\n');
   }
