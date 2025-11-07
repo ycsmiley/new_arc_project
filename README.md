@@ -110,14 +110,23 @@ npm install
 ### 2. Environment Setup
 
 ```bash
-# Frontend (.env.local)
-cp frontend/.env.example frontend/.env.local
+# Copy environment templates
+# Frontend
+cp env.example frontend/.env.local
+# OR use the specific template:
+cp frontend/env.example frontend/.env.local
 
-# Backend (.env)
-cp backend/.env.example backend/.env
+# Backend
+cp env.example backend/.env
+# OR use the specific template:
+cp backend/env.example backend/.env
 
-# Contracts (.env)
-cp contracts/.env.example contracts/.env
+# Contracts
+cp env.example contracts/.env
+# OR use the specific template:
+cp contracts/env.example contracts/.env
+
+# Then edit each file with your actual values
 ```
 
 ### 3. Deploy Smart Contracts

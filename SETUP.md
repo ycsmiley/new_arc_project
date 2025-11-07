@@ -64,9 +64,14 @@ npm install
 You can skip this for now if just exploring the code:
 ```bash
 # Only create these when you're ready to run the apps
-cp .env.example frontend/.env.local
-cp .env.example backend/.env
-cp .env.example contracts/.env
+cp env.example frontend/.env.local
+cp env.example backend/.env
+cp env.example contracts/.env
+
+# OR use the specific templates in each folder:
+cp frontend/env.example frontend/.env.local
+cp backend/env.example backend/.env
+cp contracts/env.example contracts/.env
 ```
 
 ---
