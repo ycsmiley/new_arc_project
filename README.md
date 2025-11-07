@@ -87,21 +87,20 @@ aegis-finance/
 ### Prerequisites
 
 - Node.js 18+
-- pnpm 8+
-- Hardhat
+- npm (comes with Node.js)
 - Supabase Account
-- Arc Testnet USDC
+- Arc Testnet USDC (from faucet)
 
 ### 1. Install Dependencies
 
 ```bash
 # Frontend
 cd frontend
-pnpm install
+npm install
 
 # Backend
 cd ../backend
-pnpm install
+npm install
 
 # Contracts
 cd ../contracts
@@ -133,11 +132,11 @@ npx hardhat run scripts/deploy-arc.js --network arcTestnet
 ```bash
 # Terminal 1: Backend
 cd backend
-pnpm run start:dev
+npm run start:dev
 
 # Terminal 2: Frontend
 cd frontend
-pnpm run dev
+npm run dev
 ```
 
 ### 5. Access the Application
@@ -209,11 +208,11 @@ npx hardhat test
 
 # Backend tests
 cd backend
-pnpm test
+npm test
 
 # Frontend tests
 cd frontend
-pnpm test
+npm test
 ```
 
 ## 📊 Demo Data Preparation
