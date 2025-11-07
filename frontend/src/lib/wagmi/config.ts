@@ -1,45 +1,38 @@
-import { http, createConfig } from 'wagmi';
-import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors';
-import type { Chain } from 'wagmi/chains';
+import { http } from "wagmi";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { defineChain } from "viem";
 
-// Arc Testnet Configuration
-export const arcTestnet: Chain = {
+// Arc Testnet Configuration (Wagmi v2 + Viem)
+export const arcTestnet = defineChain({
   id: 421614, // Arc Testnet Chain ID (update with official value when available)
-  name: 'Arc Testnet',
+  name: "Arc Testnet",
   nativeCurrency: {
     decimals: 6, // USDC has 6 decimals
-    name: 'USD Coin',
-    symbol: 'USDC',
+    name: "USD Coin",
+    symbol: "USDC",
   },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.circle.com'],
+      http: [process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc.network"],
     },
   },
   blockExplorers: {
     default: {
-      name: 'Arc Explorer',
-      url: 'https://explorer.testnet.arc.circle.com',
+      name: "Arc Explorer",
+      url: "https://explorer.testnet.arc.network",
     },
   },
   testnet: true,
-};
+});
 
-// Export chains array for RainbowKit
-export const chains = [arcTestnet] as const;
+// Export chains array
+export const chains = [arcTestnet];
 
-// Wagmi v2 Config
-export const wagmiConfig = createConfig({
+// Wagmi v2 Configuration with RainbowKit
+export const wagmiConfig = getDefaultConfig({
+  appName: "Aegis Finance",
+  projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || "YOUR_PROJECT_ID",
   chains: [arcTestnet],
-  connectors: [
-    injected(),
-    walletConnect({
-      projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
-    }),
-    coinbaseWallet({
-      appName: 'Aegis Finance',
-    }),
-  ],
   transports: {
     [arcTestnet.id]: http(),
   },
