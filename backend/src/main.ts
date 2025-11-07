@@ -27,7 +27,7 @@ async function bootstrap() {
   await app.listen(port);
 
   console.log(`🚀 Aegis Finance Backend running on: http://localhost:${port}`);
-  console.log(`📝 API documentation: http://localhost:${port}/api`);
+  console.log(`📝 API documentation: http://localhost:${port}/api/docs`);
 }
 
 bootstrap();
