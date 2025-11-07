@@ -116,10 +116,12 @@ describe("ArcPool", function () {
 
     it("Should allow supplier to withdraw financing with valid signature", async function () {
       const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6); // $2000 interest
       const nonce = Date.now();
       const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60); // 90 days
 
-      // Create EIP-712 signature
+      // Create EIP-712 signature (V2 format)
       const domain = {
         name: "ArcPool",
         version: "1",
@@ -132,6 +134,8 @@ describe("ArcPool", function () {
           { name: "invoiceId", type: "bytes32" },
           { name: "supplier", type: "address" },
           { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
           { name: "nonce", type: "uint256" },
           { name: "deadline", type: "uint256" },
         ],
@@ -141,6 +145,8 @@ describe("ArcPool", function () {
         invoiceId: invoiceId1,
         supplier: supplier1.address,
         payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
         nonce: nonce,
         deadline: deadline,
       };
@@ -151,7 +157,7 @@ describe("ArcPool", function () {
       await expect(
         arcPool
           .connect(supplier1)
-          .withdrawFinancing(invoiceId1, payoutAmount, nonce, deadline, signature)
+          .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature)
       )
         .to.emit(arcPool, "FinancingWithdrawn")
         .withArgs(invoiceId1, supplier1.address, payoutAmount, await time.latest());
@@ -161,12 +167,21 @@ describe("ArcPool", function () {
       expect(await arcPool.availableLiquidity()).to.equal(
         ethers.parseUnits("2000", 6) // 100,000 - 98,000
       );
+
+      // Verify financing record
+      const record = await arcPool.financingRecords(invoiceId1);
+      expect(record.payoutAmount).to.equal(payoutAmount);
+      expect(record.repaymentAmount).to.equal(repaymentAmount);
+      expect(record.dueDate).to.equal(dueDate);
+      expect(record.repaid).to.be.false;
     });
 
     it("Should revert on expired signature", async function () {
       const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6);
       const nonce = Date.now();
-      const deadline = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+      const deadline = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago (EXPIRED)
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
 
       const domain = {
         name: "ArcPool",
@@ -180,6 +195,8 @@ describe("ArcPool", function () {
           { name: "invoiceId", type: "bytes32" },
           { name: "supplier", type: "address" },
           { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
           { name: "nonce", type: "uint256" },
           { name: "deadline", type: "uint256" },
         ],
@@ -189,6 +206,8 @@ describe("ArcPool", function () {
         invoiceId: invoiceId1,
         supplier: supplier1.address,
         payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
         nonce: nonce,
         deadline: deadline,
       };
@@ -198,14 +217,16 @@ describe("ArcPool", function () {
       await expect(
         arcPool
           .connect(supplier1)
-          .withdrawFinancing(invoiceId1, payoutAmount, nonce, deadline, signature)
+          .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature)
       ).to.be.revertedWith("Signature expired");
     });
 
     it("Should revert on invalid signature", async function () {
       const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6);
       const nonce = Date.now();
       const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
 
       // Use wrong signer
       const domain = {
@@ -220,6 +241,8 @@ describe("ArcPool", function () {
           { name: "invoiceId", type: "bytes32" },
           { name: "supplier", type: "address" },
           { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
           { name: "nonce", type: "uint256" },
           { name: "deadline", type: "uint256" },
         ],
@@ -229,6 +252,8 @@ describe("ArcPool", function () {
         invoiceId: invoiceId1,
         supplier: supplier1.address,
         payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
         nonce: nonce,
         deadline: deadline,
       };
@@ -238,14 +263,16 @@ describe("ArcPool", function () {
       await expect(
         arcPool
           .connect(supplier1)
-          .withdrawFinancing(invoiceId1, payoutAmount, nonce, deadline, signature)
+          .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature)
       ).to.be.revertedWith("Invalid signature");
     });
 
     it("Should prevent double financing of same invoice", async function () {
       const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6);
       const nonce = Date.now();
       const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
 
       const domain = {
         name: "ArcPool",
@@ -259,6 +286,8 @@ describe("ArcPool", function () {
           { name: "invoiceId", type: "bytes32" },
           { name: "supplier", type: "address" },
           { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
           { name: "nonce", type: "uint256" },
           { name: "deadline", type: "uint256" },
         ],
@@ -268,6 +297,8 @@ describe("ArcPool", function () {
         invoiceId: invoiceId1,
         supplier: supplier1.address,
         payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
         nonce: nonce,
         deadline: deadline,
       };
@@ -277,14 +308,59 @@ describe("ArcPool", function () {
       // First financing
       await arcPool
         .connect(supplier1)
-        .withdrawFinancing(invoiceId1, payoutAmount, nonce, deadline, signature);
+        .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature);
 
       // Try to finance again
       await expect(
         arcPool
           .connect(supplier1)
-          .withdrawFinancing(invoiceId1, payoutAmount, nonce, deadline, signature)
+          .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature)
       ).to.be.revertedWith("Invoice already financed");
+    });
+
+    it("Should validate repayment amount is greater than payout", async function () {
+      const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("98000", 6); // Same as payout (invalid)
+      const nonce = Date.now();
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+      const domain = {
+        name: "ArcPool",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await arcPool.getAddress(),
+      };
+
+      const types = {
+        FinancingRequest: [
+          { name: "invoiceId", type: "bytes32" },
+          { name: "supplier", type: "address" },
+          { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        invoiceId: invoiceId1,
+        supplier: supplier1.address,
+        payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      const signature = await aegisWallet.signTypedData(domain, types, value);
+
+      await expect(
+        arcPool
+          .connect(supplier1)
+          .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature)
+      ).to.be.revertedWith("Repayment must be greater than payout");
     });
   });
 
