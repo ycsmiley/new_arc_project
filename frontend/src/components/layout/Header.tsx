@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 const navigation = [
   { name: 'Home', href: '/' },
@@ -43,14 +43,19 @@ export function Header() {
           })}
         </nav>
 
-        {/* Wallet Connect Button (Placeholder) */}
+        {/* Wallet Connect Button */}
         <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            className="border-neutral-700 text-neutral-300 hover:bg-neutral-900 hover:text-white"
-          >
-            Connect Wallet
-          </Button>
+          <ConnectButton
+            chainStatus="icon"
+            accountStatus={{
+              smallScreen: 'avatar',
+              largeScreen: 'full',
+            }}
+            showBalance={{
+              smallScreen: false,
+              largeScreen: true,
+            }}
+          />
         </div>
       </div>
     </header>
