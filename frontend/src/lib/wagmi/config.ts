@@ -1,11 +1,9 @@
-import { createConfig, configureChains } from "wagmi";
-import { publicProvider } from "wagmi/providers/public";
-import { jsonRpcProvider } from "wagmi/providers/jsonRpc";
-import { getDefaultWallets } from "@rainbow-me/rainbowkit";
-import type { Chain } from "wagmi";
+import { http, createConfig } from "wagmi";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { defineChain } from "viem";
 
-// Arc Testnet Configuration
-export const arcTestnet: Chain = {
+// Arc Testnet Configuration (Wagmi v2 + Viem)
+export const arcTestnet = defineChain({
   id: 421614, // Arc Testnet Chain ID (update with official value)
   name: "Arc Testnet",
   network: "arc-testnet",
@@ -18,9 +16,6 @@ export const arcTestnet: Chain = {
     default: {
       http: [process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc.circle.com"],
     },
-    public: {
-      http: [process.env.NEXT_PUBLIC_ARC_RPC_URL || "https://rpc.testnet.arc.circle.com"],
-    },
   },
   blockExplorers: {
     default: {
@@ -29,32 +24,17 @@ export const arcTestnet: Chain = {
     },
   },
   testnet: true,
-};
+});
 
-const { chains, publicClient, webSocketPublicClient } = configureChains(
-  [arcTestnet],
-  [
-    jsonRpcProvider({
-      rpc: (chain) => ({
-        http: chain.rpcUrls.default.http[0],
-      }),
-    }),
-    publicProvider(),
-  ]
-);
-
-const { connectors } = getDefaultWallets({
+// Wagmi v2 Configuration
+export const wagmiConfig = getDefaultConfig({
   appName: "Aegis Finance",
-  projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID!,
-  chains,
+  projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || "YOUR_PROJECT_ID",
+  chains: [arcTestnet],
+  transports: {
+    [arcTestnet.id]: http(),
+  },
 });
 
-export const wagmiConfig = createConfig({
-  autoConnect: true,
-  connectors,
-  publicClient,
-  webSocketPublicClient,
-});
-
-export { chains };
+export const chains = [arcTestnet];
 
