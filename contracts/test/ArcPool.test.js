@@ -36,16 +36,18 @@ describe("ArcPool", function () {
   });
 
   describe("LP Deposits", function () {
-    it("Should allow LP to deposit USDC", async function () {
+    it("Should allow LP to deposit USDC and receive shares", async function () {
       const depositAmount = ethers.parseUnits("10000", 6); // 10,000 USDC
 
       await expect(
         arcPool.connect(lp1).deposit({ value: depositAmount })
       )
         .to.emit(arcPool, "Deposit")
-        .withArgs(lp1.address, depositAmount, depositAmount);
+        .withArgs(lp1.address, depositAmount, depositAmount, depositAmount); // assets, shares, newTotalPoolSize
 
-      expect(await arcPool.lpDeposits(lp1.address)).to.equal(depositAmount);
+      // V3: Check share balance instead of lpDeposits
+      expect(await arcPool.getLPShareBalance(lp1.address)).to.equal(depositAmount); // 1:1 ratio for first deposit
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(depositAmount); // Can also use ERC20 balanceOf
       expect(await arcPool.totalPoolSize()).to.equal(depositAmount);
       expect(await arcPool.availableLiquidity()).to.equal(depositAmount);
     });
@@ -64,6 +66,8 @@ describe("ArcPool", function () {
       await arcPool.connect(lp2).deposit({ value: amount2 });
 
       expect(await arcPool.totalPoolSize()).to.equal(amount1 + amount2);
+      // V3: Verify total shares minted equals total assets (first deposits)
+      expect(await arcPool.totalSupply()).to.equal(amount1 + amount2);
     });
   });
 
@@ -73,37 +77,102 @@ describe("ArcPool", function () {
       await arcPool.connect(lp1).deposit({ value: depositAmount });
     });
 
-    it("Should allow LP to withdraw their deposit", async function () {
+    it("Should allow LP to withdraw assets by burning shares", async function () {
       const withdrawAmount = ethers.parseUnits("5000", 6);
+      const initialShares = await arcPool.balanceOf(lp1.address);
 
       await expect(
-        arcPool.connect(lp1).withdraw(withdrawAmount)
+        arcPool.connect(lp1).withdrawAssets(withdrawAmount)
       ).to.emit(arcPool, "Withdrawal");
 
-      expect(await arcPool.lpDeposits(lp1.address)).to.equal(
-        ethers.parseUnits("5000", 6)
+      // V3: Check share balance decreased
+      const finalShares = await arcPool.balanceOf(lp1.address);
+      expect(finalShares).to.be.lessThan(initialShares);
+
+      // V3: Check asset value is approximately correct (accounting for rounding)
+      const assetValue = await arcPool.getLPAssetValue(lp1.address);
+      expect(assetValue).to.be.closeTo(
+        ethers.parseUnits("5000", 6),
+        ethers.parseUnits("1", 6) // 1 USDC tolerance
       );
     });
 
-    it("Should revert if withdrawal exceeds deposit", async function () {
+    it("Should allow LP to redeem specific number of shares", async function () {
+      const sharesToRedeem = ethers.parseUnits("5000", 6); // Redeem half the shares
+      const initialShares = await arcPool.balanceOf(lp1.address);
+
+      await expect(
+        arcPool.connect(lp1).redeemShares(sharesToRedeem)
+      ).to.emit(arcPool, "Withdrawal");
+
+      // V3: Verify shares were burned
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(initialShares - sharesToRedeem);
+    });
+
+    it("Should revert if withdrawal exceeds share balance", async function () {
       const withdrawAmount = ethers.parseUnits("15000", 6);
 
       await expect(
-        arcPool.connect(lp1).withdraw(withdrawAmount)
-      ).to.be.revertedWith("Insufficient deposit");
+        arcPool.connect(lp1).withdrawAssets(withdrawAmount)
+      ).to.be.revertedWith("Insufficient shares");
+    });
+
+    it("Should revert if redeem exceeds share balance", async function () {
+      const sharesToRedeem = ethers.parseUnits("15000", 6);
+
+      await expect(
+        arcPool.connect(lp1).redeemShares(sharesToRedeem)
+      ).to.be.revertedWith("Insufficient shares");
     });
 
     it("Should revert if withdrawal exceeds available liquidity", async function () {
-      // This would happen if funds are locked in financing
       const withdrawAmount = ethers.parseUnits("10000", 6);
-      
-      // Simulate financing by directly reducing available liquidity
-      // In real scenario, this happens through withdrawFinancing
-      // For now, we just test the basic withdrawal
-      
+
+      // First, do a financing to lock up most of the liquidity
+      const payoutAmount = ethers.parseUnits("9000", 6);
+      const repaymentAmount = ethers.parseUnits("9200", 6);
+      const nonce = Date.now();
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+      const domain = {
+        name: "ArcPool",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await arcPool.getAddress(),
+      };
+
+      const types = {
+        FinancingRequest: [
+          { name: "invoiceId", type: "bytes32" },
+          { name: "supplier", type: "address" },
+          { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        invoiceId: invoiceId1,
+        supplier: supplier1.address,
+        payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      const signature = await aegisWallet.signTypedData(domain, types, value);
+      await arcPool
+        .connect(supplier1)
+        .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature);
+
+      // Now try to withdraw more than available liquidity
       await expect(
-        arcPool.connect(lp1).withdraw(withdrawAmount)
-      ).to.emit(arcPool, "Withdrawal");
+        arcPool.connect(lp1).withdrawAssets(withdrawAmount)
+      ).to.be.revertedWith("Insufficient pool liquidity");
     });
   });
 
@@ -384,6 +453,224 @@ describe("ArcPool", function () {
     });
   });
 
+  describe("V3 Profit Distribution (Share Appreciation)", function () {
+    it("Should automatically appreciate LP shares when interest is earned", async function () {
+      // LP1 deposits 100,000 USDC
+      const depositAmount = ethers.parseUnits("100000", 6);
+      await arcPool.connect(lp1).deposit({ value: depositAmount });
+
+      // Initial state: 1:1 ratio
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(depositAmount);
+      expect(await arcPool.getLPAssetValue(lp1.address)).to.equal(depositAmount);
+
+      // Finance an invoice
+      const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6); // $2000 interest
+      const nonce = Date.now();
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+      const domain = {
+        name: "ArcPool",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await arcPool.getAddress(),
+      };
+
+      const types = {
+        FinancingRequest: [
+          { name: "invoiceId", type: "bytes32" },
+          { name: "supplier", type: "address" },
+          { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        invoiceId: invoiceId1,
+        supplier: supplier1.address,
+        payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      const signature = await aegisWallet.signTypedData(domain, types, value);
+      await arcPool
+        .connect(supplier1)
+        .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature);
+
+      // Repay the invoice with interest
+      await arcPool.connect(buyer1).repay(invoiceId1, { value: repaymentAmount });
+
+      // V3 KEY TEST: LP's share balance hasn't changed
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(depositAmount);
+
+      // BUT: LP's asset value has increased due to interest
+      const lpInterest = (ethers.parseUnits("2000", 6) * 9000n) / 10000n; // 90% of $2000 interest
+      const expectedAssetValue = depositAmount + lpInterest;
+
+      const actualAssetValue = await arcPool.getLPAssetValue(lp1.address);
+      expect(actualAssetValue).to.equal(expectedAssetValue);
+
+      // Verify share price increased
+      const sharePrice = (await arcPool.totalAssets()) * ethers.parseUnits("1", 18) / await arcPool.totalSupply();
+      expect(sharePrice).to.be.greaterThan(ethers.parseUnits("1", 18)); // Greater than 1:1
+    });
+
+    it("Should distribute profits proportionally to all LPs", async function () {
+      // LP1 deposits 60,000 USDC
+      const lp1Deposit = ethers.parseUnits("60000", 6);
+      await arcPool.connect(lp1).deposit({ value: lp1Deposit });
+
+      // LP2 deposits 40,000 USDC
+      const lp2Deposit = ethers.parseUnits("40000", 6);
+      await arcPool.connect(lp2).deposit({ value: lp2Deposit });
+
+      // Total pool: 100,000 USDC
+      expect(await arcPool.totalPoolSize()).to.equal(ethers.parseUnits("100000", 6));
+
+      // LP1 has 60% of shares, LP2 has 40%
+      const lp1SharesBefore = await arcPool.balanceOf(lp1.address);
+      const lp2SharesBefore = await arcPool.balanceOf(lp2.address);
+
+      // Finance and repay
+      const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6); // $2000 interest
+      const nonce = Date.now();
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+      const domain = {
+        name: "ArcPool",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await arcPool.getAddress(),
+      };
+
+      const types = {
+        FinancingRequest: [
+          { name: "invoiceId", type: "bytes32" },
+          { name: "supplier", type: "address" },
+          { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        invoiceId: invoiceId1,
+        supplier: supplier1.address,
+        payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      const signature = await aegisWallet.signTypedData(domain, types, value);
+      await arcPool
+        .connect(supplier1)
+        .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature);
+
+      await arcPool.connect(buyer1).repay(invoiceId1, { value: repaymentAmount });
+
+      // V3: Shares haven't changed
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(lp1SharesBefore);
+      expect(await arcPool.balanceOf(lp2.address)).to.equal(lp2SharesBefore);
+
+      // But asset values increased proportionally
+      const lp1AssetValue = await arcPool.getLPAssetValue(lp1.address);
+      const lp2AssetValue = await arcPool.getLPAssetValue(lp2.address);
+
+      // LP1 should have more than their initial deposit
+      expect(lp1AssetValue).to.be.greaterThan(lp1Deposit);
+      // LP2 should have more than their initial deposit
+      expect(lp2AssetValue).to.be.greaterThan(lp2Deposit);
+
+      // Profit should be distributed 60:40
+      const lp1Profit = lp1AssetValue - lp1Deposit;
+      const lp2Profit = lp2AssetValue - lp2Deposit;
+
+      // Check ratio is approximately 60:40 (allowing for rounding)
+      const ratio = (lp1Profit * 10000n) / lp2Profit;
+      expect(ratio).to.be.closeTo(15000n, 100n); // 1.5 ratio (60/40) with tolerance
+    });
+
+    it("Should give later LPs correct share amount based on current pool value", async function () {
+      // LP1 deposits 100,000 USDC initially
+      const lp1InitialDeposit = ethers.parseUnits("100000", 6);
+      await arcPool.connect(lp1).deposit({ value: lp1InitialDeposit });
+
+      // Finance and repay to generate profit
+      const payoutAmount = ethers.parseUnits("98000", 6);
+      const repaymentAmount = ethers.parseUnits("100000", 6);
+      const nonce = Date.now();
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const dueDate = Math.floor(Date.now() / 1000) + (90 * 24 * 60 * 60);
+
+      const domain = {
+        name: "ArcPool",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await arcPool.getAddress(),
+      };
+
+      const types = {
+        FinancingRequest: [
+          { name: "invoiceId", type: "bytes32" },
+          { name: "supplier", type: "address" },
+          { name: "payoutAmount", type: "uint256" },
+          { name: "repaymentAmount", type: "uint256" },
+          { name: "dueDate", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        invoiceId: invoiceId1,
+        supplier: supplier1.address,
+        payoutAmount: payoutAmount,
+        repaymentAmount: repaymentAmount,
+        dueDate: dueDate,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      const signature = await aegisWallet.signTypedData(domain, types, value);
+      await arcPool
+        .connect(supplier1)
+        .withdrawFinancing(invoiceId1, payoutAmount, repaymentAmount, dueDate, nonce, deadline, signature);
+
+      await arcPool.connect(buyer1).repay(invoiceId1, { value: repaymentAmount });
+
+      // Now pool has grown due to interest
+      const totalAssetsAfterInterest = await arcPool.totalAssets();
+      expect(totalAssetsAfterInterest).to.be.greaterThan(lp1InitialDeposit);
+
+      // LP2 deposits same amount as LP1 initially did
+      const lp2Deposit = ethers.parseUnits("100000", 6);
+      await arcPool.connect(lp2).deposit({ value: lp2Deposit });
+
+      // V3: LP2 should receive FEWER shares than LP1 because pool value is higher
+      const lp1Shares = await arcPool.balanceOf(lp1.address);
+      const lp2Shares = await arcPool.balanceOf(lp2.address);
+      expect(lp2Shares).to.be.lessThan(lp1Shares);
+
+      // But both should have same asset value
+      const lp1Assets = await arcPool.getLPAssetValue(lp1.address);
+      const lp2Assets = await arcPool.getLPAssetValue(lp2.address);
+      expect(lp1Assets).to.be.closeTo(lp2Assets, ethers.parseUnits("1", 6)); // Allow 1 USDC tolerance
+    });
+  });
+
   describe("View Functions", function () {
     it("Should return correct pool status", async function () {
       const depositAmount = ethers.parseUnits("50000", 6);
@@ -396,11 +683,53 @@ describe("ArcPool", function () {
       expect(status[3]).to.equal(0); // financed
     });
 
-    it("Should return correct LP balance", async function () {
+    it("Should return correct LP share balance", async function () {
       const depositAmount = ethers.parseUnits("10000", 6);
       await arcPool.connect(lp1).deposit({ value: depositAmount });
 
-      expect(await arcPool.getLPBalance(lp1.address)).to.equal(depositAmount);
+      // V3: Use getLPShareBalance instead of getLPBalance
+      expect(await arcPool.getLPShareBalance(lp1.address)).to.equal(depositAmount);
+      expect(await arcPool.balanceOf(lp1.address)).to.equal(depositAmount); // Also test ERC20 method
+    });
+
+    it("Should return correct LP asset value", async function () {
+      const depositAmount = ethers.parseUnits("10000", 6);
+      await arcPool.connect(lp1).deposit({ value: depositAmount });
+
+      // V3: Test getLPAssetValue
+      expect(await arcPool.getLPAssetValue(lp1.address)).to.equal(depositAmount);
+    });
+
+    it("Should return correct total assets", async function () {
+      const depositAmount = ethers.parseUnits("10000", 6);
+      await arcPool.connect(lp1).deposit({ value: depositAmount });
+
+      // V3: Test totalAssets
+      expect(await arcPool.totalAssets()).to.equal(depositAmount);
+    });
+
+    it("Should calculate shares for assets correctly", async function () {
+      const depositAmount = ethers.parseUnits("10000", 6);
+      await arcPool.connect(lp1).deposit({ value: depositAmount });
+
+      // V3: Test getSharesForAssets
+      const assetsToDeposit = ethers.parseUnits("5000", 6);
+      const expectedShares = await arcPool.getSharesForAssets(assetsToDeposit);
+
+      // For 1:1 ratio (no profit yet), shares should equal assets
+      expect(expectedShares).to.equal(assetsToDeposit);
+    });
+
+    it("Should calculate assets for shares correctly", async function () {
+      const depositAmount = ethers.parseUnits("10000", 6);
+      await arcPool.connect(lp1).deposit({ value: depositAmount });
+
+      // V3: Test getAssetsForShares
+      const sharesToRedeem = ethers.parseUnits("5000", 6);
+      const expectedAssets = await arcPool.getAssetsForShares(sharesToRedeem);
+
+      // For 1:1 ratio (no profit yet), assets should equal shares
+      expect(expectedAssets).to.equal(sharesToRedeem);
     });
   });
 });
