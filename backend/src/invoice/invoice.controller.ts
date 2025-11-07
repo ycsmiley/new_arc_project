@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { InvoiceService, Invoice } from './invoice.service';
 
-@Controller('api/invoices')
+@Controller('invoices')
 export class InvoiceController {
   private readonly logger = new Logger(InvoiceController.name);
 

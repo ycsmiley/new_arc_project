@@ -20,7 +20,7 @@ export class AppController {
     };
   }
 
-  @Get('api')
+  @Get('docs')
   getApiDocs() {
     return {
       service: 'Aegis Finance API',
