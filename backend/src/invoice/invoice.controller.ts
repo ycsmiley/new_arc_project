@@ -8,7 +8,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { InvoiceService } from './invoice.service';
+import { InvoiceService, Invoice } from './invoice.service';
 
 @Controller('api/invoices')
 export class InvoiceController {
@@ -32,7 +32,7 @@ export class InvoiceController {
       buyer_rating?: number;
       supplier_rating?: number;
     },
-  ) {
+  ): Promise<{ success: boolean; data: Invoice }> {
     try {
       this.logger.log(
         `Creating invoice ${body.invoice_number} for ${body.amount} USDC`,
@@ -141,7 +141,7 @@ export class InvoiceController {
    * POST /api/invoices/:id/approve
    */
   @Post(':id/approve')
-  async approveInvoice(@Param('id') invoiceId: string) {
+  async approveInvoice(@Param('id') invoiceId: string): Promise<{ success: boolean; data: Invoice }> {
     try {
       this.logger.log(`Approving invoice ${invoiceId}`);
 
