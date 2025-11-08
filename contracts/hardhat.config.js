@@ -43,8 +43,9 @@ module.exports = {
     arcTestnet: {
       url: process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network",
       accounts: [getPrivateKey()],
-      chainId: 	5042002, // Update with official Arc Testnet Chain ID
-      gasPrice: 0.001, // 0.001 USDC per gas unit (adjust as needed)
+      chainId: 5042002, // Arc Testnet Chain ID
+      // gasPrice: Auto-estimated by network (USDC-based)
+      // If manual setting needed: use integer like 1000000 (1 USDC)
     },
   },
   etherscan: {
