@@ -182,15 +182,40 @@ export class AegisService {
 
 Respond with only a single number between 0-100 representing the creditworthiness score.`;
 
-      const result = await this.hf.textGeneration({
-        model: 'mistralai/Mistral-7B-Instruct-v0.1',
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 10,
-          temperature: 0.3,
-          return_full_text: false,
-        },
-      });
+      // Try multiple models in order of preference (fallback if one fails)
+      const models = [
+        'meta-llama/Llama-3.2-1B-Instruct', // Small, fast, free
+        'mistralai/Mistral-7B-Instruct-v0.3', // Newer Mistral version
+        'HuggingFaceH4/zephyr-7b-beta', // Alternative open model
+      ];
+
+      let result;
+      let lastError;
+
+      for (const model of models) {
+        try {
+          this.logger.debug(`Trying model: ${model}`);
+          result = await this.hf.textGeneration({
+            model,
+            inputs: prompt,
+            parameters: {
+              max_new_tokens: 10,
+              temperature: 0.3,
+              return_full_text: false,
+            },
+          });
+          this.logger.log(`Successfully used model: ${model}`);
+          break; // Success, exit loop
+        } catch (err) {
+          this.logger.debug(`Model ${model} failed: ${err.message}`);
+          lastError = err;
+          continue; // Try next model
+        }
+      }
+
+      if (!result) {
+        throw lastError || new Error('All models failed');
+      }
 
       const scoreText = result.generated_text.trim();
       const score = parseFloat(scoreText);
