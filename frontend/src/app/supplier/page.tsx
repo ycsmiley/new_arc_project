@@ -96,7 +96,7 @@ export default function SupplierPortal() {
             .update({
               status: 'FINANCED',
               financing_tx_hash: hash,
-            })
+            } as any)
             .eq('id', processingInvoiceId);
 
           // Reload invoices
