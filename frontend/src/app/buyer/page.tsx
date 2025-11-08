@@ -73,11 +73,22 @@ export default function BuyerPortal() {
     writeContract,
     data: hash,
     isPending: isWritePending,
+    error: writeError,
   } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+
+  // Log write errors
+  useEffect(() => {
+    if (writeError) {
+      console.error('=== writeContract Error ===');
+      console.error('Error:', writeError);
+      setError(`Transaction failed: ${writeError.message}`);
+      setRepayingInvoiceId(null);
+    }
+  }, [writeError]);
 
   useEffect(() => {
     setMounted(true);
@@ -198,9 +209,37 @@ export default function BuyerPortal() {
       setError(null);
       setSuccessMessage(null);
 
+      console.log('=== Pay Now Button Clicked ===');
+      console.log('Invoice ID:', invoice.id);
+      console.log('Contract Address:', contractAddress);
+      console.log('Connected Address:', address);
+      console.log('Invoice Data:', {
+        amount: invoice.amount,
+        aegis_repayment_amount: invoice.aegis_repayment_amount,
+        due_date: invoice.due_date,
+      });
+
+      // Validate contract address
+      if (!contractAddress || contractAddress === '0x') {
+        setError('Contract address not configured. Please set NEXT_PUBLIC_ARC_CONTRACT_ADDRESS in .env.local');
+        console.error('Contract address missing!');
+        return;
+      }
+
+      // Validate wallet connection
+      if (!address || !isConnected) {
+        setError('Wallet not connected');
+        console.error('Wallet not connected!');
+        return;
+      }
+
       // Validate invoice has required data
       if (!invoice.aegis_repayment_amount || !invoice.due_date) {
         setError('Invalid invoice data - missing repayment amount or due date');
+        console.error('Missing invoice data:', {
+          aegis_repayment_amount: invoice.aegis_repayment_amount,
+          due_date: invoice.due_date
+        });
         return;
       }
 
@@ -224,12 +263,20 @@ export default function BuyerPortal() {
       }
 
       // Create invoice hash for contract call
-      const invoiceHash = keccak256(stringToHex(invoice.id));
+      // IMPORTANT: Must use invoice_number (not id) to match what supplier used in withdrawFinancing
+      const invoiceHashInput = invoice.invoice_number || invoice.id;
+      const invoiceHash = keccak256(stringToHex(invoiceHashInput));
+      console.log('Invoice Number:', invoiceHashInput);
+      console.log('Invoice Hash:', invoiceHash);
 
       // Store the invoice ID for the success handler
       setRepayingInvoiceId(invoice.id);
 
-      console.log(`Repaying invoice ${invoice.id.slice(0, 8)}... with amount: $${totalAmount.toFixed(2)}`);
+      const valueInWei = parseUnits(totalAmount.toFixed(6), 18);
+      console.log(`Calling repay() with:`);
+      console.log('  - invoiceHash:', invoiceHash);
+      console.log('  - value:', totalAmount.toFixed(6), 'USDC');
+      console.log('  - valueInWei:', valueInWei.toString());
 
       // Repay to the pool contract with correct parameters
       writeContract({
@@ -237,10 +284,15 @@ export default function BuyerPortal() {
         abi: ArcPoolABI,
         functionName: 'repay',
         args: [invoiceHash],
-        value: parseUnits(totalAmount.toFixed(6), 18), // Send payment as value (contract is payable)
+        value: valueInWei, // Send payment as value (contract is payable)
       });
+
+      console.log('writeContract called successfully');
     } catch (err) {
-      console.error('Error repaying invoice:', err);
+      console.error('=== Error in handleRepayInvoice ===');
+      console.error('Error:', err);
+      console.error('Error message:', err instanceof Error ? err.message : 'Unknown error');
+      console.error('Error stack:', err instanceof Error ? err.stack : 'No stack trace');
       setError(err instanceof Error ? err.message : 'Failed to repay invoice');
       setRepayingInvoiceId(null);
     }
