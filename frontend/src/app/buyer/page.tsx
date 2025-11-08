@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { parseUnits } from 'viem';
+import { parseUnits, id as hashString } from 'viem';
 import { createClient } from '@/lib/supabase/client';
 import { Database } from '@/lib/supabase/types';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,7 @@ export default function BuyerPortal() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [repayingInvoiceId, setRepayingInvoiceId] = useState<string | null>(null);
 
   const supabase = createClient();
   const contractAddress = process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS as `0x${string}` || '0x';
@@ -93,6 +94,36 @@ export default function BuyerPortal() {
       loadInvoices();
     }
   }, [isSuccess]);
+
+  // Handle successful repayment transaction
+  useEffect(() => {
+    const updateRepaymentStatus = async () => {
+      if (isSuccess && repayingInvoiceId && hash) {
+        try {
+          const { error: updateError } = await supabase
+            .from('invoices')
+            .update({
+              status: 'PAID',
+              repayment_tx_hash: hash,
+            })
+            .eq('id', repayingInvoiceId);
+
+          if (updateError) {
+            console.error('Failed to update invoice status:', updateError);
+            setError('Payment successful but failed to update database');
+          } else {
+            setSuccessMessage('Repayment successful!');
+            setRepayingInvoiceId(null);
+          }
+        } catch (err) {
+          console.error('Error updating invoice:', err);
+          setError('Payment successful but failed to update database');
+        }
+      }
+    };
+
+    updateRepaymentStatus();
+  }, [isSuccess, repayingInvoiceId, hash, supabase]);
 
   const loadInvoices = async () => {
     if (!address) return;
@@ -167,34 +198,47 @@ export default function BuyerPortal() {
       setError(null);
       setSuccessMessage(null);
 
-      if (!invoice.amount) {
-        setError('Invalid invoice amount');
+      if (!invoice.amount || !invoice.due_date) {
+        setError('Invalid invoice data');
         return;
       }
 
-      // Repay to the pool contract
-      await writeContract({
+      // Calculate late fee if overdue
+      const now = Math.floor(Date.now() / 1000);
+      const dueDate = Math.floor(new Date(invoice.due_date).getTime() / 1000);
+      let totalAmount = invoice.amount;
+      let lateFeeAmount = 0;
+
+      if (now > dueDate) {
+        // Calculate late fee (1% per day, max 30%)
+        const daysLate = Math.floor((now - dueDate) / 86400);
+        lateFeeAmount = Math.min(
+          invoice.amount * daysLate * 0.01,
+          invoice.amount * 0.3
+        );
+        totalAmount = invoice.amount + lateFeeAmount;
+
+        console.log(`Invoice is ${daysLate} days overdue. Late fee: $${lateFeeAmount.toFixed(2)}`);
+      }
+
+      // Create invoice hash for contract call
+      const invoiceHash = hashString(invoice.id) as `0x${string}`;
+
+      // Store the invoice ID for the success handler
+      setRepayingInvoiceId(invoice.id);
+
+      // Repay to the pool contract with correct parameters
+      writeContract({
         address: contractAddress,
         abi: ArcPoolABI,
         functionName: 'repay',
-        args: [parseUnits(invoice.amount.toString(), 18)],
+        args: [invoiceHash],
+        value: parseUnits(totalAmount.toFixed(6), 18), // Send payment as value (contract is payable)
       });
-
-      if (isSuccess) {
-        await supabase
-          .from('invoices')
-          .update({
-            status: 'PAID',
-            repayment_tx_hash: hash,
-          })
-          .eq('id', invoice.id);
-
-        setSuccessMessage('Repayment successful!');
-        loadInvoices();
-      }
     } catch (err) {
       console.error('Error repaying invoice:', err);
       setError(err instanceof Error ? err.message : 'Failed to repay invoice');
+      setRepayingInvoiceId(null);
     }
   };
 
@@ -515,64 +559,110 @@ export default function BuyerPortal() {
               </Card>
             ) : (
               <div className="grid gap-4">
-                {financedInvoices.map((invoice) => (
-                  <Card key={invoice.id} className="border-yellow-800/50">
-                    <CardContent className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-lg font-semibold text-white">{invoice.id}</h3>
-                            <Badge variant="warning">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              Repayment Due
-                            </Badge>
-                          </div>
-                          <div className="text-sm text-neutral-400">
-                            Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-neutral-500 mb-1">Amount Due</p>
-                          <p className="text-2xl font-bold text-yellow-400">
-                            ${invoice.amount.toLocaleString()}
-                          </p>
-                          {invoice.due_date && (
-                            <p className="text-xs text-neutral-500 mt-1">
-                              Due: {new Date(invoice.due_date).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                {financedInvoices.map((invoice) => {
+                  // Calculate late fee for display
+                  const now = Math.floor(Date.now() / 1000);
+                  const dueDate = invoice.due_date ? Math.floor(new Date(invoice.due_date).getTime() / 1000) : 0;
+                  const isOverdue = now > dueDate;
+                  let lateFee = 0;
+                  let daysLate = 0;
+                  if (isOverdue && dueDate > 0) {
+                    daysLate = Math.floor((now - dueDate) / 86400);
+                    lateFee = Math.min(
+                      (invoice.amount || 0) * daysLate * 0.01,
+                      (invoice.amount || 0) * 0.3
+                    );
+                  }
+                  const totalDue = (invoice.amount || 0) + lateFee;
 
-                      <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
-                        <Button
-                          onClick={() => handleRepayInvoice(invoice)}
-                          disabled={isWritePending || isConfirming}
-                          className="gap-2"
-                        >
-                          {(isWritePending || isConfirming) ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Processing
-                            </>
-                          ) : (
-                            <>
-                              <DollarSign className="h-4 w-4" />
-                              Pay Now
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setExpandedInvoiceId(expandedInvoiceId === invoice.id ? null : invoice.id)}
-                        >
-                          {expandedInvoiceId === invoice.id ? 'Hide Details' : 'View Details'}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                  return (
+                    <Card key={invoice.id} className={isOverdue ? "border-red-800/50" : "border-yellow-800/50"}>
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold text-white">{invoice.id.slice(0, 12)}...</h3>
+                              <Badge variant={isOverdue ? "error" : "warning"}>
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                {isOverdue ? 'OVERDUE' : 'Repayment Due'}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-neutral-400">
+                              Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-neutral-500 mb-1">Original Amount</p>
+                            <p className="text-xl font-semibold text-white">
+                              ${invoice.amount?.toLocaleString() || '0'}
+                            </p>
+                            {invoice.due_date && (
+                              <p className={`text-xs mt-1 ${isOverdue ? 'text-red-400 font-semibold' : 'text-neutral-500'}`}>
+                                Due: {new Date(invoice.due_date).toLocaleDateString()}
+                                {isOverdue && ` (${daysLate} days late)`}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Late Fee Warning */}
+                        {isOverdue && lateFee > 0 && (
+                          <div className="mb-4 p-3 bg-red-900/20 border border-red-800 rounded">
+                            <div className="flex items-center gap-2 mb-2">
+                              <AlertCircle className="h-4 w-4 text-red-400" />
+                              <p className="text-sm font-semibold text-red-400">Late Fee Applied</p>
+                            </div>
+                            <div className="text-sm text-neutral-300 space-y-1">
+                              <div className="flex justify-between">
+                                <span>Original Amount:</span>
+                                <span>${invoice.amount?.toLocaleString() || '0'}</span>
+                              </div>
+                              <div className="flex justify-between text-red-400">
+                                <span>Late Fee ({daysLate} days × 1%):</span>
+                                <span>+${lateFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between font-semibold text-white pt-2 border-t border-red-800">
+                                <span>Total Due:</span>
+                                <span>${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-neutral-400 mt-2">
+                              Late fees: 1% per day (max 30%)
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
+                          <Button
+                            onClick={() => handleRepayInvoice(invoice)}
+                            disabled={isWritePending || isConfirming}
+                            className="gap-2"
+                            variant={isOverdue ? "destructive" : "default"}
+                          >
+                            {(isWritePending || isConfirming) ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Processing
+                              </>
+                            ) : (
+                              <>
+                                <DollarSign className="h-4 w-4" />
+                                Pay ${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setExpandedInvoiceId(expandedInvoiceId === invoice.id ? null : invoice.id)}
+                          >
+                            {expandedInvoiceId === invoice.id ? 'Hide Details' : 'View Details'}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
