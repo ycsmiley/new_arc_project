@@ -41,6 +41,13 @@ export function CreateInvoiceDialog({ onInvoiceCreated }: CreateInvoiceDialogPro
     setError(null);
 
     try {
+      // Validate that buyer and supplier are not the same
+      if (formData.buyer_address.toLowerCase() === address?.toLowerCase()) {
+        setError('Buyer and Supplier cannot be the same address. Please enter a different buyer address.');
+        setIsLoading(false);
+        return;
+      }
+
       // Call backend API to create invoice with AI pricing
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(`${apiUrl}/api/invoices`, {
