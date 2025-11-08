@@ -196,7 +196,7 @@ Respond with only a single number between 0-100 representing the creditworthines
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+              'Authorization': `Bearer ${this.configService.get<string>('HUGGINGFACE_API_TOKEN')}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
