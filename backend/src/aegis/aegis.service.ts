@@ -325,8 +325,8 @@ Respond with only a single number between 0-100 representing the creditworthines
     daysUntilDue: number,
   ): Promise<SignatureData> {
     const nonce = Date.now();
-    const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour expiry for signature
-    const dueDate = Math.floor(Date.now() / 1000) + (daysUntilDue * 24 * 60 * 60); // Convert days to seconds
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    const dueDate = Math.floor(Date.now() / 1000) + (daysUntilDue * 24 * 60 * 60);
 
     const contractAddress = this.configService.get<string>(
       'ARC_CONTRACT_ADDRESS',
@@ -334,7 +334,6 @@ Respond with only a single number between 0-100 representing the creditworthines
     const chainId =
       this.configService.get<number>('ARC_CHAIN_ID') || 421614;
 
-    // EIP-712 Domain
     const domain = {
       name: 'ArcPool',
       version: '1',
@@ -342,7 +341,6 @@ Respond with only a single number between 0-100 representing the creditworthines
       verifyingContract: contractAddress,
     };
 
-    // EIP-712 Types (Updated to match new contract)
     const types = {
       FinancingRequest: [
         { name: 'invoiceId', type: 'bytes32' },
@@ -355,11 +353,9 @@ Respond with only a single number between 0-100 representing the creditworthines
       ],
     };
 
-    // Convert amounts to Wei (6 decimals for USDC)
     const payoutAmountWei = ethers.parseUnits(payoutAmount.toString(), 18);
     const repaymentAmountWei = ethers.parseUnits(repaymentAmount.toString(), 18);
 
-    // Values
     const values = {
       invoiceId: ethers.id(invoiceId),
       supplier: supplierAddress,
@@ -370,7 +366,6 @@ Respond with only a single number between 0-100 representing the creditworthines
       deadline: deadline,
     };
 
-    // Sign with server wallet
     const privateKey = this.configService.get<string>(
       'SERVER_WALLET_PRIVATE_KEY',
     );
@@ -380,7 +375,6 @@ Respond with only a single number between 0-100 representing the creditworthines
 
     const wallet = new ethers.Wallet(privateKey);
 
-    // Log wallet address for debugging
     this.logger.log(`🔑 Signing with wallet: ${wallet.address}`);
     this.logger.log(`🎯 Contract expects: 0x782c3446aeDabdD934e97ee255D5C5c62fE289D3`);
     const isMatch = wallet.address.toLowerCase() === '0x782c3446aeDabdD934e97ee255D5C5c62fE289D3'.toLowerCase();
