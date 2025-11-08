@@ -116,7 +116,7 @@ export default function BuyerPortal() {
             .update({
               status: 'PAID',
               repayment_tx_hash: hash,
-            })
+            } as any)
             .eq('id', repayingInvoiceId);
 
           if (updateError) {
