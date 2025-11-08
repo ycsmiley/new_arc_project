@@ -63,6 +63,16 @@ export class InvoiceService {
       throw new Error('Supabase not configured');
     }
 
+    // Validate that buyer and supplier are not the same
+    if (supplierAddress.toLowerCase() === buyerAddress.toLowerCase()) {
+      this.logger.error(
+        `Validation failed: Buyer and Supplier cannot be the same address (${supplierAddress})`,
+      );
+      throw new Error(
+        'Invalid invoice: Buyer and Supplier cannot be the same address',
+      );
+    }
+
     // 1. Calculate dynamic pricing using AI agent
     this.logger.log(`Calculating AI pricing for invoice ${invoiceNumber}`);
     const pricing = await this.aegisService.calculateDynamicPricing(
