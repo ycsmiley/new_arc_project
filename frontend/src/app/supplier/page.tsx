@@ -201,8 +201,7 @@ export default function SupplierPortal() {
       console.log('Deadline (human):', new Date(Number(deadline) * 1000).toLocaleString());
       console.log('Signature:', invoice.aegis_signature);
 
-      // Check if deadline has expired
-      const nowTimestamp = Math.floor(Date.now() / 1000);
+      // Check if deadline has expired (reuse nowTimestamp from above)
       const isExpired = Number(deadline) < nowTimestamp;
       console.log('Current Time:', nowTimestamp);
       console.log('Is Expired?', isExpired ? '❌ YES - EXPIRED!' : '✓ No');
