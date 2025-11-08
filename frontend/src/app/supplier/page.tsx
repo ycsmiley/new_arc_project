@@ -57,6 +57,7 @@ export default function SupplierPortal() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
   const supabase = createClient();
   const contractAddress = process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS as `0x${string}` || '0x';
@@ -83,6 +84,8 @@ export default function SupplierPortal() {
   }, [address, mounted]);
 
   const loadInvoices = async () => {
+    if (!address) return;
+
     try {
       setIsLoading(true);
       setError(null);
@@ -90,7 +93,8 @@ export default function SupplierPortal() {
       const { data, error: fetchError } = await supabase
         .from('invoices')
         .select('*')
-        .order('created_at', { ascending: false });
+        .eq('supplier_address', address.toLowerCase())
+        .order('created_at', { ascending: false});
 
       if (fetchError) throw fetchError;
 
@@ -165,6 +169,8 @@ export default function SupplierPortal() {
   };
 
   // Calculate stats
+  const financedInvoices = invoices.filter(i => i.status === 'FINANCED' || i.status === 'APPROVED');
+
   const stats = {
     total: invoices.length,
     financed: invoices.filter(i => i.status === 'FINANCED').length,
@@ -172,7 +178,18 @@ export default function SupplierPortal() {
     totalFinanced: invoices
       .filter(i => i.status === 'FINANCED' && i.aegis_payout_offer)
       .reduce((sum, i) => sum + (i.aegis_payout_offer || 0), 0),
-    averageRate: 8.5, // TODO: Calculate from actual data
+    averageRate: financedInvoices.length > 0
+      ? financedInvoices
+          .filter(i => i.aegis_discount_rate && i.due_date)
+          .map(i => {
+            // Calculate APR from discount rate and term
+            const daysUntilDue = Math.ceil((new Date(i.due_date!).getTime() - new Date(i.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            const discountRate = i.aegis_discount_rate || 0;
+            // APR = discount rate * (365 / days)
+            return daysUntilDue > 0 ? (discountRate * (365 / daysUntilDue)) * 100 : 0;
+          })
+          .reduce((sum, apr, _, arr) => sum + apr / arr.length, 0)
+      : 0,
   };
 
   // Prevent hydration mismatch by not rendering until mounted
@@ -397,17 +414,18 @@ export default function SupplierPortal() {
                   {invoices.map((invoice) => {
                     const statusInfo = statusConfig[invoice.status as keyof typeof statusConfig];
                     const StatusIcon = statusInfo?.icon || AlertCircle;
+                    const isExpanded = expandedInvoiceId === invoice.id;
 
                     return (
                       <div
                         key={invoice.id}
-                        className="p-6 hover:bg-neutral-900/50 transition-colors cursor-pointer"
+                        className="p-6 hover:bg-neutral-900/50 transition-colors"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <h3 className="text-lg font-semibold text-white">
-                                {invoice.id}
+                                {invoice.invoice_number || invoice.id.slice(0, 8)}
                               </h3>
                               <Badge variant={statusInfo?.variant || 'default'}>
                                 <StatusIcon className="h-3 w-3 mr-1" />
@@ -415,7 +433,7 @@ export default function SupplierPortal() {
                               </Badge>
                             </div>
                             <p className="text-sm text-neutral-400 mb-3">
-                              Buyer: {invoice.buyer_id}
+                              Buyer: {invoice.buyer_address ? `${invoice.buyer_address.slice(0, 6)}...${invoice.buyer_address.slice(-4)}` : 'N/A'}
                             </p>
                             <div className="flex gap-6 text-sm">
                               <div>
@@ -450,11 +468,61 @@ export default function SupplierPortal() {
                                 </p>
                               </div>
                             )}
-                            <Button variant="ghost" size="sm">
-                              View Details
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setExpandedInvoiceId(isExpanded ? null : invoice.id)}
+                            >
+                              {isExpanded ? 'Hide Details' : 'View Details'}
                             </Button>
                           </div>
                         </div>
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-neutral-800 space-y-3">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-neutral-500 mb-1">Supplier Address</p>
+                                <p className="text-sm text-white font-mono">{invoice.supplier_address}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-neutral-500 mb-1">Buyer Address</p>
+                                <p className="text-sm text-white font-mono">{invoice.buyer_address}</p>
+                              </div>
+                            </div>
+
+                            {invoice.aegis_pricing_explanation && (
+                              <div className="p-3 bg-neutral-900/50 border border-neutral-800 rounded">
+                                <p className="text-xs font-semibold text-neutral-300 mb-2">AI Pricing Analysis</p>
+                                <pre className="text-xs text-neutral-400 whitespace-pre-wrap font-mono">
+                                  {invoice.aegis_pricing_explanation}
+                                </pre>
+                              </div>
+                            )}
+
+                            {invoice.aegis_signature && (
+                              <div>
+                                <p className="text-xs text-neutral-500 mb-1">Aegis Signature</p>
+                                <p className="text-xs text-neutral-400 font-mono break-all">{invoice.aegis_signature}</p>
+                              </div>
+                            )}
+
+                            {invoice.financing_tx_hash && (
+                              <div>
+                                <p className="text-xs text-neutral-500 mb-1">Financing Transaction</p>
+                                <a
+                                  href={`https://explorer.testnet.arc.network/tx/${invoice.financing_tx_hash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-400 hover:text-blue-300 font-mono"
+                                >
+                                  {invoice.financing_tx_hash}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
