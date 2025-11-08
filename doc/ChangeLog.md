@@ -6,6 +6,38 @@
 
 ---
 
+## [1.0.1] - 2025-11-08 23:45 (本地時間)
+
+### 🚀 Arc Testnet 部署成功
+
+#### 修復
+- **智能合約配置修復**
+  - ✅ 修復 `hardhat.config.js` 中的 `gasPrice` 浮點數錯誤
+  - ✅ 移除手動設置的 gasPrice，改為網絡自動估算
+  - ✅ 解決 `InvalidArgumentsError: Invalid value "0x0.004189374bc6a7f"` 部署錯誤
+  
+#### 部署資訊
+- **合約地址**: `0x8080900fD63d6C7e4E716D1cb65F1071e98cD14C`
+- **網絡**: Arc Testnet (Chain ID: 5042002)
+- **部署帳戶**: `0xdaaBa82018dbE31D9e28726F156feE448223e1Ec`
+- **Aegis Server**: `0x782c3446aedabdd934e97ee255d5c5c62fe289d3`
+- **帳戶餘額**: 10,000,000,000,000 USDC
+- **初始流動性**: 0 USDC
+- **區塊確認**: 5 區塊
+
+#### 技術細節
+- **Gas 價格**: 由 Arc 網絡自動估算（USDC-based）
+- **合約驗證**: 待設定 API Key 後進行
+- **部署文件**: 已保存至 `contracts/deployments/arcTestnet-latest.json`
+
+#### 下一步
+- [ ] 更新前端環境變數 `NEXT_PUBLIC_ARC_CONTRACT_ADDRESS`
+- [ ] 更新後端環境變數 `ARC_CONTRACT_ADDRESS`
+- [ ] 配置區塊鏈瀏覽器 API Key 以驗證合約
+- [ ] 測試前端與已部署合約的互動
+
+---
+
 ## [1.0.0] - 2025-11-07
 
 ### 🎉 初始專案建立
