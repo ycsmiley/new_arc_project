@@ -403,11 +403,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Supabase**: https://supabase.com
 - **Documentation**: See the `/doc` directory
 
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/aegis-finance/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/aegis-finance/discussions)
-- **Email**: team@aegis-finance.com
 
 ---
 
