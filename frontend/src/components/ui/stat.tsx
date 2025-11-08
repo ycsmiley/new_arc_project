@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, HelpCircle } from "lucide-react";
+import { Tooltip } from "./tooltip";
 
 interface StatProps extends React.HTMLAttributes<HTMLDivElement> {
   label: string;
@@ -11,10 +12,11 @@ interface StatProps extends React.HTMLAttributes<HTMLDivElement> {
     isPositive: boolean;
   };
   description?: string;
+  tooltip?: string;
 }
 
 const Stat = React.forwardRef<HTMLDivElement, StatProps>(
-  ({ className, label, value, icon: Icon, trend, description, ...props }, ref) => {
+  ({ className, label, value, icon: Icon, trend, description, tooltip, ...props }, ref) => {
     return (
       <div
         ref={ref}
@@ -25,7 +27,14 @@ const Stat = React.forwardRef<HTMLDivElement, StatProps>(
         {...props}
       >
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-neutral-400">{label}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-neutral-400">{label}</p>
+            {tooltip && (
+              <Tooltip content={tooltip}>
+                <HelpCircle className="h-3.5 w-3.5 text-neutral-500 hover:text-neutral-300 transition-colors" />
+              </Tooltip>
+            )}
+          </div>
           {Icon && <Icon className="h-4 w-4 text-neutral-500" />}
         </div>
 
