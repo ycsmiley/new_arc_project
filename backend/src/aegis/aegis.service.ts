@@ -182,39 +182,60 @@ export class AegisService {
 
 Respond with only a single number between 0-100 representing the creditworthiness score.`;
 
-      // Try multiple models in order of preference (fallback if one fails)
+      // Try multiple models with different strategies
       const models = [
-        'meta-llama/Llama-3.2-1B-Instruct', // Small, fast, free
-        'mistralai/Mistral-7B-Instruct-v0.3', // Newer Mistral version
-        'HuggingFaceH4/zephyr-7b-beta', // Alternative open model
+        { name: 'microsoft/Phi-3-mini-4k-instruct', type: 'text-generation' },
+        { name: 'google/flan-t5-base', type: 'text-generation' },
+        { name: 'meta-llama/Llama-3.2-1B-Instruct', type: 'conversational' },
       ];
 
       let result;
       let lastError;
 
-      for (const model of models) {
+      for (const modelConfig of models) {
         try {
-          this.logger.debug(`Trying model: ${model}`);
-          result = await this.hf.textGeneration({
-            model,
-            inputs: prompt,
-            parameters: {
-              max_new_tokens: 10,
-              temperature: 0.3,
-              return_full_text: false,
-            },
-          });
-          this.logger.log(`Successfully used model: ${model}`);
+          this.logger.debug(`Trying model: ${modelConfig.name} (${modelConfig.type})`);
+
+          if (modelConfig.type === 'conversational') {
+            // Use conversational API for chat models
+            const response = await this.hf.conversational({
+              model: modelConfig.name,
+              inputs: {
+                text: prompt,
+                past_user_inputs: [],
+                generated_responses: [],
+              },
+              parameters: {
+                max_new_tokens: 10,
+                temperature: 0.3,
+              },
+            });
+            result = { generated_text: response.generated_text };
+          } else {
+            // Use text generation for completion models
+            result = await this.hf.textGeneration({
+              model: modelConfig.name,
+              inputs: prompt,
+              parameters: {
+                max_new_tokens: 10,
+                temperature: 0.3,
+                return_full_text: false,
+              },
+            });
+          }
+
+          this.logger.log(`Successfully used model: ${modelConfig.name}`);
           break; // Success, exit loop
         } catch (err) {
-          this.logger.debug(`Model ${model} failed: ${err.message}`);
+          this.logger.debug(`Model ${modelConfig.name} failed: ${err.message}`);
           lastError = err;
           continue; // Try next model
         }
       }
 
       if (!result) {
-        throw lastError || new Error('All models failed');
+        this.logger.warn('All AI models failed, falling back to rule-based scoring');
+        return null; // Gracefully fallback to rule-based scoring
       }
 
       const scoreText = result.generated_text.trim();
