@@ -190,8 +190,9 @@ Respond with only a single number between 0-100 representing the creditworthines
         this.logger.debug(`Using Mistral model: ${modelName}`);
 
         // Mistral-7B-Instruct requires conversational API - use direct HTTP request
+        // Note: Hugging Face migrated to new inference router
         const response = await fetch(
-          `https://api-inference.huggingface.co/models/${modelName}`,
+          `https://router.huggingface.co/hf-inference/models/${modelName}`,
           {
             method: 'POST',
             headers: {
