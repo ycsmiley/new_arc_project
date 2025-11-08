@@ -58,6 +58,16 @@ artifacts/
 typechain/
 typechain-types/
 
+# Smart Contract Deployments
+# Deployment records contain environment-specific addresses and should not be committed
+contracts/deployments/
+**/deployments/*.json
+
+# Documentation (Internal Development Notes)
+# These are internal development docs and should not be pushed to GitHub
+doc/
+docs/
+
 # Miscellaneous
 .cache/
 .temp/
