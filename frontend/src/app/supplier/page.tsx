@@ -300,9 +300,9 @@ export default function SupplierPortal() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <CardTitle className="text-lg">{invoice.invoice_number || invoice.id}</CardTitle>
-                          <CardDescription>
+                          <div className="text-sm text-muted-foreground">
                             Buyer: {invoice.buyer_address ? <Address address={invoice.buyer_address} /> : 'N/A'}
-                          </CardDescription>
+                          </div>
                         </div>
                         <Badge variant="success">
                           <CheckCircle className="h-3 w-3 mr-1" />
@@ -433,9 +433,9 @@ export default function SupplierPortal() {
                                 {statusInfo?.label || invoice.status}
                               </Badge>
                             </div>
-                            <p className="text-sm text-neutral-400 mb-3">
+                            <div className="text-sm text-neutral-400 mb-3">
                               Buyer: {invoice.buyer_address ? <Address address={invoice.buyer_address} /> : 'N/A'}
-                            </p>
+                            </div>
                             <div className="flex gap-6 text-sm">
                               <div>
                                 <span className="text-neutral-500">Amount: </span>
