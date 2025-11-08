@@ -182,23 +182,28 @@ export class AegisService {
 
 Respond with only a single number between 0-100 representing the creditworthiness score.`;
 
-      // Use single Mistral model
+      // Use Mistral model with conversational API
       const modelName = 'mistralai/Mistral-7B-Instruct-v0.2';
 
       let result;
       try {
         this.logger.debug(`Using Mistral model: ${modelName}`);
 
-        result = await this.hf.textGeneration({
+        // Mistral-7B-Instruct requires conversational API
+        const response = await this.hf.conversational({
           model: modelName,
-          inputs: prompt,
+          inputs: {
+            text: prompt,
+            past_user_inputs: [],
+            generated_responses: [],
+          },
           parameters: {
             max_new_tokens: 10,
             temperature: 0.3,
-            return_full_text: false,
           },
         });
 
+        result = { generated_text: response.generated_text };
         this.logger.log(`Successfully used Mistral model: ${modelName}`);
       } catch (err) {
         this.logger.error(`Mistral model failed: ${err.message}`);
