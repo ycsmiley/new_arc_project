@@ -337,9 +337,9 @@ export default function BuyerPortal() {
                               Pending Approval
                             </Badge>
                           </div>
-                          <p className="text-sm text-neutral-400">
+                          <div className="text-sm text-neutral-400">
                             Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
-                          </p>
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-white">
@@ -407,9 +407,9 @@ export default function BuyerPortal() {
                               Approved
                             </Badge>
                           </div>
-                          <p className="text-sm text-neutral-400 mb-3">
+                          <div className="text-sm text-neutral-400 mb-3">
                             Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
-                          </p>
+                          </div>
                           <div className="flex gap-6 text-sm">
                             <div>
                               <span className="text-neutral-500">Amount: </span>
@@ -460,9 +460,9 @@ export default function BuyerPortal() {
                               Repayment Due
                             </Badge>
                           </div>
-                          <p className="text-sm text-neutral-400">
+                          <div className="text-sm text-neutral-400">
                             Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
-                          </p>
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-neutral-500 mb-1">Amount Due</p>
@@ -528,9 +528,9 @@ export default function BuyerPortal() {
                               Paid
                             </Badge>
                           </div>
-                          <p className="text-sm text-neutral-400 mb-3">
+                          <div className="text-sm text-neutral-400 mb-3">
                             Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
-                          </p>
+                          </div>
                           <div className="flex gap-6 text-sm">
                             <div>
                               <span className="text-neutral-500">Amount: </span>
