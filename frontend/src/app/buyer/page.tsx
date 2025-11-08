@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Stat } from '@/components/ui/stat';
+import { Address } from '@/components/ui/address';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ArcPoolABI from '@/contracts/ArcPool.json';
 import {
@@ -337,7 +338,7 @@ export default function BuyerPortal() {
                             </Badge>
                           </div>
                           <p className="text-sm text-neutral-400">
-                            Supplier: {invoice.supplier_id}
+                            Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
                           </p>
                         </div>
                         <div className="text-right">
@@ -407,7 +408,7 @@ export default function BuyerPortal() {
                             </Badge>
                           </div>
                           <p className="text-sm text-neutral-400 mb-3">
-                            Supplier: {invoice.supplier_id}
+                            Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
                           </p>
                           <div className="flex gap-6 text-sm">
                             <div>
@@ -460,7 +461,7 @@ export default function BuyerPortal() {
                             </Badge>
                           </div>
                           <p className="text-sm text-neutral-400">
-                            Supplier: {invoice.supplier_id}
+                            Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
                           </p>
                         </div>
                         <div className="text-right">
@@ -528,7 +529,7 @@ export default function BuyerPortal() {
                             </Badge>
                           </div>
                           <p className="text-sm text-neutral-400 mb-3">
-                            Supplier: {invoice.supplier_id}
+                            Supplier: {invoice.supplier_address ? <Address address={invoice.supplier_address} /> : "N/A"}
                           </p>
                           <div className="flex gap-6 text-sm">
                             <div>
