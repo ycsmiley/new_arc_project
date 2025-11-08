@@ -169,6 +169,8 @@ export default function SupplierPortal() {
   };
 
   // Calculate stats
+  const financedInvoices = invoices.filter(i => i.status === 'FINANCED' || i.status === 'APPROVED');
+
   const stats = {
     total: invoices.length,
     financed: invoices.filter(i => i.status === 'FINANCED').length,
@@ -176,7 +178,18 @@ export default function SupplierPortal() {
     totalFinanced: invoices
       .filter(i => i.status === 'FINANCED' && i.aegis_payout_offer)
       .reduce((sum, i) => sum + (i.aegis_payout_offer || 0), 0),
-    averageRate: 8.5, // TODO: Calculate from actual data
+    averageRate: financedInvoices.length > 0
+      ? financedInvoices
+          .filter(i => i.aegis_discount_rate && i.due_date)
+          .map(i => {
+            // Calculate APR from discount rate and term
+            const daysUntilDue = Math.ceil((new Date(i.due_date!).getTime() - new Date(i.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            const discountRate = i.aegis_discount_rate || 0;
+            // APR = discount rate * (365 / days)
+            return daysUntilDue > 0 ? (discountRate * (365 / daysUntilDue)) * 100 : 0;
+          })
+          .reduce((sum, apr, _, arr) => sum + apr / arr.length, 0)
+      : 0,
   };
 
   // Prevent hydration mismatch by not rendering until mounted
