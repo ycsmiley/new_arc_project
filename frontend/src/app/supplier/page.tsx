@@ -143,6 +143,15 @@ export default function SupplierPortal() {
     setError(null);
     setProcessingInvoiceId(invoice.id);
 
+    console.log('🚀 Accept Offer clicked for invoice:', invoice.id);
+    console.log('📋 Invoice data:', {
+      has_signature: !!invoice.aegis_signature,
+      has_deadline: !!invoice.aegis_deadline,
+      deadline_value: invoice.aegis_deadline,
+      payout: invoice.aegis_payout_offer,
+      repayment: invoice.aegis_repayment_amount,
+    });
+
     try {
       // 1. Check if signature exists and is not expired
       const nowTimestamp = Math.floor(Date.now() / 1000);
@@ -150,26 +159,57 @@ export default function SupplierPortal() {
                                  !invoice.aegis_deadline ||
                                  Number(invoice.aegis_deadline) < nowTimestamp;
 
+      console.log('🔍 Signature check:', {
+        now: nowTimestamp,
+        deadline: invoice.aegis_deadline,
+        needs_new: needsNewSignature,
+        reason: !invoice.aegis_signature ? 'no signature' :
+                !invoice.aegis_deadline ? 'no deadline' :
+                Number(invoice.aegis_deadline) < nowTimestamp ? 'expired' :
+                'signature valid'
+      });
+
       // 2. Get fresh signature from backend if needed
       if (needsNewSignature) {
-        console.log('🔄 Requesting fresh signature from backend...');
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const signResponse = await fetch(`${apiUrl}/api/invoices/${invoice.id}/sign`, {
-          method: 'POST',
-        });
+        console.log('🔄 Requesting fresh signature from backend...');
+        console.log('   API URL:', apiUrl);
+        console.log('   Endpoint:', `${apiUrl}/api/invoices/${invoice.id}/sign`);
 
-        const signResult = await signResponse.json();
-        if (!signResult.success) {
-          throw new Error(signResult.message || 'Failed to get Aegis signature');
+        try {
+          const signResponse = await fetch(`${apiUrl}/api/invoices/${invoice.id}/sign`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          console.log('📥 Backend response status:', signResponse.status);
+
+          if (!signResponse.ok) {
+            const errorText = await signResponse.text();
+            console.error('❌ Backend error response:', errorText);
+            throw new Error(`Backend returned ${signResponse.status}: ${errorText}`);
+          }
+
+          const signResult = await signResponse.json();
+          console.log('📦 Backend response data:', signResult);
+
+          if (!signResult.success) {
+            throw new Error(signResult.message || 'Failed to get Aegis signature');
+          }
+
+          // Update local invoice data with fresh signature
+          invoice.aegis_signature = signResult.data.signature;
+          invoice.aegis_nonce = signResult.data.nonce;
+          invoice.aegis_deadline = signResult.data.deadline;
+          invoice.aegis_due_date = signResult.data.dueDate;
+
+          console.log('✓ Fresh signature received, deadline:', new Date(Number(signResult.data.deadline) * 1000).toLocaleString());
+        } catch (fetchError) {
+          console.error('❌ Error fetching signature:', fetchError);
+          throw new Error(`Failed to connect to backend: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
         }
-
-        // Update local invoice data with fresh signature
-        invoice.aegis_signature = signResult.data.signature;
-        invoice.aegis_nonce = signResult.data.nonce;
-        invoice.aegis_deadline = signResult.data.deadline;
-        invoice.aegis_due_date = signResult.data.dueDate;
-
-        console.log('✓ Fresh signature received, deadline:', new Date(Number(signResult.data.deadline) * 1000).toLocaleString());
       } else {
         console.log('✓ Using existing valid signature, deadline:', new Date(Number(invoice.aegis_deadline) * 1000).toLocaleString());
       }
