@@ -73,6 +73,8 @@ You'll need these values ready before deploying:
 
 ## 🎨 Step 1: Deploy Frontend to Vercel
 
+⚠️ **IMPORTANT for Monorepo**: Your project has both frontend and backend in the same repository. When deploying to Vercel, you MUST set the **Root Directory** to `frontend` so Vercel only builds the Next.js app.
+
 ### Option A: Via Vercel Dashboard (Recommended)
 
 1. **Go to Vercel Dashboard**
@@ -84,13 +86,18 @@ You'll need these values ready before deploying:
    - Click "Import"
 
 3. **Configure Project Settings**
+
+   **IMPORTANT**: Set Root Directory first!
+
    ```
-   Framework Preset: Next.js
    Root Directory: frontend
+   Framework Preset: Next.js (auto-detected)
    Build Command: npm run build (auto-detected)
    Output Directory: .next (auto-detected)
    Install Command: npm install (auto-detected)
    ```
+
+   Note: After setting Root Directory to `frontend`, Vercel will automatically detect Next.js and configure all build settings.
 
 4. **Add Environment Variables**
 
@@ -394,13 +401,25 @@ jobs:
 
 ### Frontend Issues
 
-**Build Fails**
+**Build Fails - "Command exited with 1"**
+```bash
+# Most common cause: Root Directory not set!
+# Solution:
+# 1. Go to Vercel Dashboard → Project Settings → General
+# 2. Scroll to "Root Directory"
+# 3. Set it to: frontend
+# 4. Click "Save"
+# 5. Trigger a new deployment (Deployments → Redeploy)
+```
+
+**Build Fails - Other Reasons**
 ```bash
 # Check build logs in Vercel dashboard
 # Common issues:
 # 1. Missing environment variables
 # 2. TypeScript errors
 # 3. Missing dependencies
+# 4. Wrong Node.js version (should use Node 18+)
 ```
 
 **CORS Errors**
